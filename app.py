@@ -1,156 +1,67 @@
+import os, random
 import streamlit as st
-import random
+from huggingface_hub import InferenceClient
 
-st.set_page_config(
-    page_title="Patient Language Practice Partner",
-    page_icon="🗣️",
-    layout="centered"
-)
-
+st.set_page_config(page_title="Patient Language Practice Partner", page_icon="🗣️")
 LANGUAGES = {
-    "English": {
-        "greeting": "Hello! 😊 I'm your patient language practice partner.",
-        "questions": [
-            "What did you do today?",
-            "What is your favorite food?",
-            "Tell me about your hometown.",
-            "What do you like to do in your free time?",
-            "What is your dream job?"
-        ],
-        "tips": [
-            "Try using complete sentences.",
-            "Add a little more detail to your answer.",
-            "Try using new vocabulary.",
-            "Don't worry about mistakes. Keep practicing!"
-        ]
-    },
-    "Spanish": {
-        "greeting": "¡Hola! 😊 Soy tu compañero paciente para practicar idiomas.",
-        "questions": [
-            "¿Cómo estuvo tu día?",
-            "¿Cuál es tu comida favorita?",
-            "Háblame de tu ciudad.",
-            "¿Qué haces en tu tiempo libre?",
-            "¿Cuál es el trabajo de tus sueños?"
-        ],
-        "tips": [
-            "Intenta usar frases completas.",
-            "Practica nuevas palabras todos los días.",
-            "Añade más detalles a tu respuesta.",
-            "No tengas miedo de cometer errores."
-        ]
-    },
-    "Hindi": {
-        "greeting": "नमस्ते! 😊 मैं आपका धैर्यवान भाषा अभ्यास साथी हूँ।",
-        "questions": [
-            "आपका दिन कैसा रहा?",
-            "आपका पसंदीदा खाना क्या है?",
-            "अपने शहर के बारे में बताइए।",
-            "आप खाली समय में क्या करना पसंद करते हैं?",
-            "आपका सपना क्या है?"
-        ],
-        "tips": [
-            "पूरे वाक्य में जवाब देने की कोशिश करें।",
-            "हर दिन नए शब्द सीखें।",
-            "अपने उत्तर में थोड़ा और विवरण जोड़ें।",
-            "गलतियों से डरने की जरूरत नहीं है।"
-        ]
-    }
+ "English": {"hello":"Hi! 😊 I'm your patient practice partner. Mistakes are welcome here!","questions":["What did you do today?","Tell me about a food you love.","What do you enjoy doing in your free time?"]},
+ "Spanish": {"hello":"¡Hola! 😊 Practiquemos juntos. ¡Los errores están bien!","questions":["¿Cómo estuvo tu día?","Háblame de una comida que te encanta.","¿Qué te gusta hacer en tu tiempo libre?"]},
+ "Hindi": {"hello":"नमस्ते! 😊 मैं आपका धैर्यवान भाषा अभ्यास साथी हूँ। गलतियाँ करना ठीक है!","questions":["आपका दिन कैसा रहा?","अपने पसंदीदा खाने के बारे में बताइए।","आप खाली समय में क्या करना पसंद करते हैं?"]}
 }
+def token_value():
+    try: return st.secrets.get("HF_TOKEN", os.environ.get("HF_TOKEN",""))
+    except Exception: return os.environ.get("HF_TOKEN","")
+def ai_reply(token, language, level, history):
+    client=InferenceClient(model="openai/gpt-oss-20b", token=token)
+    messages=[{"role":"system","content":f"You are a kind, patient language tutor. Help the learner practice {language} at {level} level. Reply mainly in {language}. Gently correct errors, briefly explain one useful point, encourage the learner, and ask one follow-up question. Keep replies concise and never shame the learner."}]+history
+    result=client.chat_completion(messages=messages, max_tokens=350, temperature=0.7)
+    return result.choices[0].message.content or "Nice try! Let's keep practicing."
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-if "score" not in st.session_state:
-    st.session_state.score = 0
-
-if "questions_answered" not in st.session_state:
-    st.session_state.questions_answered = 0
+if "messages" not in st.session_state: st.session_state.messages=[]
+if "score" not in st.session_state: st.session_state.score=0
+if "sent" not in st.session_state: st.session_state.sent=0
+if "chosen_language" not in st.session_state: st.session_state.chosen_language="English"
 
 st.sidebar.title("⚙️ Practice Settings")
-
-language = st.sidebar.selectbox("Choose a language", list(LANGUAGES.keys()))
-level = st.sidebar.selectbox(
-    "Your level",
-    ["Beginner", "Intermediate", "Advanced"]
-)
-
-st.sidebar.divider()
-st.sidebar.metric("Practice Score", st.session_state.score)
-st.sidebar.metric("Questions Answered", st.session_state.questions_answered)
-
+language=st.sidebar.selectbox("Choose a language",list(LANGUAGES))
+level=st.sidebar.selectbox("Your level",["Beginner","Intermediate","Advanced"])
+st.sidebar.metric("Practice score",st.session_state.score)
+st.sidebar.metric("Messages sent",st.session_state.sent)
+if language != st.session_state.chosen_language:
+    st.session_state.messages=[]; st.session_state.chosen_language=language
 if st.sidebar.button("🔄 Start New Practice"):
-    st.session_state.messages = []
-    st.session_state.score = 0
-    st.session_state.questions_answered = 0
-    st.rerun()
+    st.session_state.messages=[]; st.session_state.score=0; st.session_state.sent=0; st.rerun()
 
 st.title("🗣️ Patient Language Practice Partner")
-st.write(
-    "Practice a new language in a friendly and patient environment. "
-    "Make mistakes, learn from them, and keep speaking! 🌱"
-)
-
-st.info(f"Language: **{language}**  |  Level: **{level}**")
-
+st.write("Practice a new language with a friendly AI partner. Make mistakes, learn, and keep going! 🌱")
+st.info(f"Language: **{language}** · Level: **{level}**")
+token=token_value()
+if not token:
+    st.warning('To enable AI, add `HF_TOKEN = "hf_your_token_here"` under your Streamlit app Settings → Secrets.')
 if not st.session_state.messages:
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": LANGUAGES[language]["greeting"]
-    })
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": random.choice(LANGUAGES[language]["questions"])
-    })
-
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.write(message["content"])
-
-user_input = st.chat_input("Type your answer here...")
-
+    st.session_state.messages=[{"role":"assistant","content":LANGUAGES[language]["hello"]},
+      {"role":"assistant","content":random.choice(LANGUAGES[language]["questions"])}]
+for m in st.session_state.messages:
+    with st.chat_message(m["role"]): st.markdown(m["content"])
+user_input=st.chat_input("Type your answer here...")
 if user_input:
-    st.session_state.messages.append({
-        "role": "user",
-        "content": user_input
-    })
-
-    word_count = len(user_input.split())
-
-    if word_count >= 8:
-        points = 10
-        feedback = "Excellent! 🌟 Your answer has good detail."
-    elif word_count >= 4:
-        points = 7
-        feedback = "Good job! 👍 Try adding a little more detail."
-    elif word_count >= 2:
-        points = 5
-        feedback = "Nice attempt! 😊 Try making a longer sentence."
-    else:
-        points = 2
-        feedback = "That's okay! Take your time and try a longer sentence."
-
-    st.session_state.score += points
-    st.session_state.questions_answered += 1
-
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": (
-            f"{feedback}\n\n"
-            f"💡 **Practice tip:** "
-            f"{random.choice(LANGUAGES[language]['tips'])}"
-        )
-    })
-
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": random.choice(LANGUAGES[language]["questions"])
-    })
-
-    st.rerun()
-
+    st.session_state.messages.append({"role":"user","content":user_input})
+    st.session_state.sent+=1
+    st.session_state.score+=min(10,max(2,len(user_input.split())))
+    with st.chat_message("user"): st.markdown(user_input)
+    with st.chat_message("assistant"):
+        if token:
+            try:
+                with st.spinner("Thinking patiently..."):
+                    reply=ai_reply(token,language,level,st.session_state.messages[-12:])
+                st.markdown(reply)
+            except Exception as e:
+                reply="I couldn't reach the model just now. Please check your Hugging Face token, model access, and provider availability."
+                st.error(reply)
+                st.caption(str(e)[:250])
+        else:
+            reply="Thanks for practicing! 🌱 Once the Hugging Face token is configured, I'll give you personalized corrections. For now, try writing a complete sentence with a little detail."
+            st.markdown(reply)
+    st.session_state.messages.append({"role":"assistant","content":reply})
 st.divider()
-st.caption(
-    "🌱 Making mistakes is part of learning. "
-    "Keep practicing and don't give up!"
-)
+st.caption("🌱 Every attempt counts. Keep practicing!")
